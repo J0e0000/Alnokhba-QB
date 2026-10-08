@@ -1,0 +1,264 @@
+// ============================================================
+// ALNOKHBA QB — OMR engine HTTP client (typed)
+// The engine is a Python/OpenCV mini-service on :3032 (Task 2-a).
+// All transport failures map to a clean, machine-readable result —
+// the API layer converts them to 503 with a clear Arabic message.
+// ============================================================
+
+import type {
+  OMRTemplate,
+  OMRThresholds,
+  QBScanDiagnostics,
+  QBScannedAnswer,
+} from '@/lib/qb/types';
+
+export const OMR_ENGINE_URL =
+  process.env.OMR_ENGINE_URL || 'http://127.0.0.1:3032';
+
+// ---------- error shape ----------
+
+export type OmrTransportStage =
+  | 'engineUnreachable'
+  | 'timeout'
+  | 'engineHttpError'
+  | 'engineProtocol';
+
+/** Transport-level failure (engine down / timeout / non-JSON). `stage` discriminates. */
+export interface OmrClientError {
+  ok: false;
+  error: string;
+  stage: OmrTransportStage;
+  status?: number;
+  details?: unknown;
+}
+
+// ---------- /process ----------
+
+export interface OmrProcessRequest {
+  imageBase64: string;
+  /** null → engine QR-decodes the sheet and reports back needsTemplate */
+  template?: OMRTemplate | null;
+  /** { [questionNumber]: optionLetter } — engine keys by NUMBER */
+  answerKey?: Record<string, string> | null;
+  /** { [questionNumber]: marks } — advisory, for engine-side preview grade */
+  marksMap?: Record<string, number> | null;
+  thresholds?: OMRThresholds | null;
+  debug?: boolean;
+  /** manual 4-corner fallback: user-clicked printed marker centers
+   *  TL,TR,BR,BL in ORIGINAL image pixels (legacy nokhba-qb calibration port) */
+  manualMarkers?: number[][] | null;
+}
+
+export interface OmrProcessSuccess {
+  ok: true;
+  answers: QBScannedAnswer[];
+  studentId?: { digits?: string; confidence?: number } | null;
+  needsTemplate?: boolean;
+  qr?: {
+    examVersionId?: string;
+    templateId?: string;
+    sheet?: number;
+  } | null;
+  diagnostics?: Partial<QBScanDiagnostics> | null;
+  debugImage?: string | null; // base64 jpeg
+  correctedImage?: string | null; // base64 jpeg
+  sheet?: number;
+}
+
+/** The engine ran but reported a business failure (e.g. template mismatch). */
+export interface OmrProcessFailure {
+  ok: false;
+  error: string;
+  stage: string; // engine-reported, e.g. 'templateMismatch'
+  answers?: QBScannedAnswer[];
+  diagnostics?: Partial<QBScanDiagnostics> | null;
+  debugImage?: string | null;
+  correctedImage?: string | null;
+}
+
+export type ProcessScanResult = OmrProcessSuccess | OmrProcessFailure | OmrClientError;
+
+export function isTransportError(r: ProcessScanResult): r is OmrClientError {
+  return (
+    r.ok === false &&
+    (r.stage === 'engineUnreachable' ||
+      r.stage === 'timeout' ||
+      r.stage === 'engineHttpError' ||
+      r.stage === 'engineProtocol')
+  );
+}
+
+// ---------- /ocr ----------
+
+export interface OmrOcrResult {
+  ok: true;
+  text: string;
+  lang: string;
+}
+
+// ---------- low-level fetch ----------
+
+async function engineFetch(
+  path: string,
+  init: RequestInit & { timeoutMs: number }
+): Promise<Response | OmrClientError> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), init.timeoutMs);
+  try {
+    const res = await fetch(`${OMR_ENGINE_URL}${path}`, {
+      ...init,
+      signal: ctrl.signal,
+      cache: 'no-store',
+    });
+    return res;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (err instanceof Error && err.name === 'AbortError') {
+      return {
+        ok: false,
+        stage: 'timeout',
+        error: `انتهت المهلة أثناء الاتصال بمحرك OMR (${init.timeoutMs / 1000} ثانية)`,
+        details: msg,
+      };
+    }
+    return {
+      ok: false,
+      stage: 'engineUnreachable',
+      error: 'OMR engine unreachable — is the service running?',
+      details: msg,
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function enginePostJson<T>(
+  path: string,
+  body: unknown,
+  timeoutMs: number
+): Promise<T | OmrClientError> {
+  const res = await engineFetch(path, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+    timeoutMs,
+  });
+  if (res instanceof Response === false) return res as OmrClientError;
+
+  const httpRes = res as Response;
+  let parsed: unknown;
+  try {
+    parsed = await httpRes.json();
+  } catch {
+    parsed = null;
+  }
+
+  if (!httpRes.ok) {
+    // engine replied with an error status AND a structured body → keep the body
+    if (parsed && typeof parsed === 'object' && 'ok' in (parsed as Record<string, unknown>)) {
+      return parsed as T;
+    }
+    return {
+      ok: false,
+      stage: 'engineHttpError',
+      status: httpRes.status,
+      error: `OMR engine returned HTTP ${httpRes.status}`,
+      details: parsed,
+    };
+  }
+
+  if (!parsed || typeof parsed !== 'object') {
+    return {
+      ok: false,
+      stage: 'engineProtocol',
+      error: 'OMR engine returned a malformed (non-JSON) response',
+      details: parsed,
+    };
+  }
+  return parsed as T;
+}
+
+// ---------- public client ----------
+
+/** POST /process — template=null first (QR discovery), then WITH template. */
+export async function processScan(payload: OmrProcessRequest): Promise<ProcessScanResult> {
+  const res = await enginePostJson<OmrProcessSuccess | OmrProcessFailure>(
+    '/process',
+    {
+      imageBase64: payload.imageBase64,
+      template: payload.template ?? null,
+      answerKey: payload.answerKey ?? null,
+      marksMap: payload.marksMap ?? null,
+      thresholds: payload.thresholds ?? null,
+      debug: payload.debug ?? true,
+      manualMarkers: payload.manualMarkers ?? null,
+    },
+    30_000
+  );
+  // Engine nests the QR identity under qr.parsed — flatten it so callers can
+  // read qr.examVersionId / qr.templateId / qr.sheet directly.
+  if (
+    res.ok &&
+    res.qr &&
+    typeof res.qr === 'object' &&
+    'parsed' in (res.qr as Record<string, unknown>)
+  ) {
+    const { parsed, ...rest } = res.qr as Record<string, unknown> & {
+      parsed?: Record<string, unknown>;
+    };
+    return {
+      ...res,
+      qr: { ...(parsed ?? {}), ...rest },
+    } as ProcessScanResult;
+  }
+  return res;
+}
+
+/** POST /ocr — tesseract text extraction (Arabic falls back to VLM in the API route). */
+export async function ocrText(
+  imageBase64: string,
+  lang: 'eng' | 'ara'
+): Promise<OmrOcrResult | OmrClientError> {
+  const res = await enginePostJson<{ ok?: boolean; text?: string }>(
+    '/ocr',
+    { imageBase64, lang },
+    30_000
+  );
+  if (res instanceof Response === false && res && typeof res === 'object') {
+    const body = res as { ok?: boolean; text?: string; error?: string; stage?: string };
+    if (body.ok && typeof body.text === 'string') {
+      return { ok: true, text: body.text, lang };
+    }
+    if ('stage' in body) return res as OmrClientError;
+    return {
+      ok: false,
+      stage: 'engineProtocol',
+      error: body.error || 'OMR engine OCR failed',
+    } as OmrClientError;
+  }
+  return res as OmrClientError;
+}
+
+export interface EngineHealth {
+  ok: boolean;
+  error?: string;
+  raw?: unknown;
+}
+
+/** GET /health with a short timeout (for /api/health). */
+export async function engineHealth(timeoutMs = 2000): Promise<EngineHealth> {
+  const res = await engineFetch('/health', { method: 'GET', timeoutMs });
+  if (res instanceof Response === false) {
+    return { ok: false, error: (res as OmrClientError).error };
+  }
+  const httpRes = res as Response;
+  if (!httpRes.ok) {
+    return { ok: false, error: `OMR engine health returned HTTP ${httpRes.status}` };
+  }
+  try {
+    const json = await httpRes.json();
+    return { ok: true, raw: json };
+  } catch {
+    return { ok: true, raw: null };
+  }
+}
