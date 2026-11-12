@@ -7,8 +7,10 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from engine.pipeline import ocr, process  # noqa: E402
 
-PORT = 3032
-MAX_BODY = 25 * 1024 * 1024
+PORT = int(os.environ.get("OMR_ENGINE_PORT", "3032"))
+HOST = os.environ.get("OMR_ENGINE_HOST", "127.0.0.1")
+# Base64 expands a 20 MiB upload by roughly one third; leave room for JSON too.
+MAX_BODY = 32 * 1024 * 1024
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -60,6 +62,6 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    server = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
-    print(f"[omr-engine] listening on http://127.0.0.1:{PORT}", flush=True)
+    server = ThreadingHTTPServer((HOST, PORT), Handler)
+    print(f"[omr-engine] listening on http://{HOST}:{PORT}", flush=True)
     server.serve_forever()

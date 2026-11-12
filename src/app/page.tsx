@@ -104,7 +104,7 @@ export default function Home() {
   const [view, setView] = useState<View>('dashboard');
   const [exams, setExams] = useState<ExamRow[]>([]);
   const [selectedExamId, setSelectedExamId] = useState<string | null>(null);
-  const [health, setHealth] = useState<{ omrEngine?: boolean; pdf?: { running?: boolean } } | null>(null);
+  const [health, setHealth] = useState<{ omrEngine?: { ok?: boolean }; pdf?: { running?: boolean } } | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
 
   const refreshExams = useCallback(async () => {
@@ -163,7 +163,7 @@ export default function Home() {
             <NavBtn active={view === 'settings'} onClick={() => setView('settings')} icon={<Settings2 className="h-4 w-4" />}>الإعدادات</NavBtn>
           </nav>
           <div className="flex items-center gap-1.5 text-[10px] text-slate-400">
-            <span className={`h-2 w-2 rounded-full ${health?.omrEngine ? 'bg-emerald-500' : 'bg-red-400'}`} title="محرك OMR" />
+            <span className={`h-2 w-2 rounded-full ${health?.omrEngine?.ok ? 'bg-emerald-500' : 'bg-red-400'}`} title="محرك OMR" />
             <span className={`h-2 w-2 rounded-full ${health?.pdf?.running ? 'bg-emerald-500' : 'bg-amber-400'}`} title="محرك PDF" />
           </div>
         </div>
