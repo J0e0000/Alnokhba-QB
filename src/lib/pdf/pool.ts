@@ -142,13 +142,22 @@ function releasePageSlot(): void {
 
 // ---------- browser lifecycle ----------
 
+// On Vercel (serverless) there is no bundled Chrome — use @sparticuz/chromium.
+async function launchOptions() {
+  if (process.env.VERCEL) {
+    const { default: chromium } = await import('@sparticuz/chromium');
+    return {
+      executablePath: await chromium.executablePath(),
+      args: [...chromium.args, ...LAUNCH_ARGS],
+    };
+  }
+  return { executablePath: chromeExecutablePath(), args: LAUNCH_ARGS };
+}
+
 async function getBrowser(): Promise<Browser> {
   if (!state.browserPromise) {
-    state.browserPromise = puppeteer
-      .launch({
-        executablePath: chromeExecutablePath(),
-        args: LAUNCH_ARGS,
-      })
+    state.browserPromise = launchOptions()
+      .then((opts) => puppeteer.launch(opts))
       .then((browser) => {
         // any disconnect (crash / kill) → reset so the next call relaunches
         browser.on('disconnected', () => {

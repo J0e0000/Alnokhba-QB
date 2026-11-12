@@ -124,7 +124,9 @@ async function engineFetch(
     return {
       ok: false,
       stage: 'engineUnreachable',
-      error: 'OMR engine unreachable — is the service running?',
+      error: process.env.VERCEL && !process.env.OMR_ENGINE_URL
+        ? 'محرك OMR غير متصل — اضبط متغير OMR_ENGINE_URL في Vercel ليشير إلى خدمة المحرك المستضافة'
+        : 'OMR engine unreachable — is the service running?',
       details: msg,
     };
   } finally {

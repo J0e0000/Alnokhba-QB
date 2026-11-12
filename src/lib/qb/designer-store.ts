@@ -381,6 +381,8 @@ export const useDesignerStore = create<DesignerState & DesignerActions>((set, ge
         body: JSON.stringify({ title, document: { ...document, schemaVersion: QB_SCHEMA_VERSION }, answerKey }),
       });
       if (!res.ok) {
+        const info = await res.json().catch(() => null);
+        console.error('[designer] save failed', res.status, info?.error ?? '');
         set({ saving: false });
         return false;
       }
