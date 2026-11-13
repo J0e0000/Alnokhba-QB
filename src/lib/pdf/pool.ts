@@ -149,6 +149,7 @@ async function launchOptions() {
     return {
       executablePath: await chromium.executablePath(),
       args: [...chromium.args, ...LAUNCH_ARGS],
+      headless: 'shell' as const,
     };
   }
   return { executablePath: chromeExecutablePath(), args: LAUNCH_ARGS };
