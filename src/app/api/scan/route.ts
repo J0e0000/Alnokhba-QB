@@ -37,6 +37,8 @@ import {
 } from '../_lib/shared';
 import { loadVersion } from '../_lib/version';
 
+export const maxDuration = 60;
+
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 

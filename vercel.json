@@ -1,7 +1,0 @@
-{
-  "functions": {
-    "src/app/api/exams/[id]/pdf/route.ts": { "maxDuration": 60 },
-    "src/app/api/exams/[id]/publish/route.ts": { "maxDuration": 60 },
-    "src/app/api/scan/route.ts": { "maxDuration": 60 }
-  }
-}

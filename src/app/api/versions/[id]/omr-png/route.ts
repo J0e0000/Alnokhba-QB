@@ -6,6 +6,8 @@ import { renderPng } from '@/lib/pdf/pool';
 import { serverError } from '../../../_lib/shared';
 import { intParam, loadVersion } from '../../../_lib/version';
 
+export const maxDuration = 60;
+
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 

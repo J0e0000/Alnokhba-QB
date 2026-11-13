@@ -9,6 +9,8 @@ import { renderPdf } from '@/lib/pdf/pool';
 import { serverError } from '../../../_lib/shared';
 import { duplicateOmrSheets, intParam, loadVersion, pdfResponse } from '../../../_lib/version';
 
+export const maxDuration = 60;
+
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 

@@ -7,6 +7,8 @@ import { renderExamHtml } from '@/lib/qb/render-exam';
 import { renderPdf } from '@/lib/pdf/pool';
 import { serverError } from '../../../_lib/shared';
 
+export const maxDuration = 60;
+
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
