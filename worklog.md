@@ -389,3 +389,17 @@ Verification:
 - Engine robustness fix surfaced by the guard: build_homography's 3-point
   strategy returned a 2x3 AFFINE matrix into cv2.warpPerspective (3x3 only)
   → crash on low-res sheets. warp_with now promotes 2x3 → 3x3.
+
+## TASK 4 — OMR engine bearer-token auth (2026-11-19)
+- mini-services/omr-engine/server.py: every route except GET /health requires
+  Authorization: Bearer <OMR_ENGINE_TOKEN> (hmac.compare_digest, constant-time);
+  401 JSON otherwise; the service REFUSES to start on 0.0.0.0/:: when the token
+  is empty (loopback-only dev engines keep working without a token).
+- src/lib/omr/client.ts sends the header automatically when OMR_ENGINE_TOKEN
+  is set (health check stays public, as designed).
+- mini-services/omr-engine/DEPLOY.md: Fly.io steps (Dockerfile deploy,
+  internal_port == OMR_ENGINE_PORT, 0.0.0.0 binding, min_machines_running = 1,
+  fly secrets set OMR_ENGINE_TOKEN, then OMR_ENGINE_URL + OMR_ENGINE_TOKEN in
+  Vercel; Render/Railway noted as equivalents).
+- Verified live: 0.0.0.0+empty-token → exit 1; /health public → 200; /process
+  no token → 401; wrong token → 401; correct token → 200 (/process + /ocr).

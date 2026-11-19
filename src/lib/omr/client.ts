@@ -104,9 +104,18 @@ async function engineFetch(
 ): Promise<Response | OmrClientError> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), init.timeoutMs);
+  // Engine auth: bearer token when configured (engine rejects requests
+  // without it; GET /health stays public by design).
+  const headers: Record<string, string> = {
+    ...((init.headers as Record<string, string> | undefined) ?? {}),
+  };
+  if (process.env.OMR_ENGINE_TOKEN) {
+    headers.authorization = `Bearer ${process.env.OMR_ENGINE_TOKEN}`;
+  }
   try {
     const res = await fetch(`${OMR_ENGINE_URL}${path}`, {
       ...init,
+      headers,
       signal: ctrl.signal,
       cache: 'no-store',
     });
