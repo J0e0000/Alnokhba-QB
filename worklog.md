@@ -370,3 +370,22 @@ Verification:
   cookie; authed /api/exams → 200; tampered cookie → 401; health unauth =
   {ok:true} only, authed = full payload; logout → 401 again. Browser: /
   redirects to /login and the login page renders (screenshot in /home/z/tmp).
+
+## TASK 3 — Upload size fix (Vercel 4.5 MB function payload) (2026-11-19)
+- New src/lib/image/prepareUpload.ts: createImageBitmap(EXIF from-image) →
+  canvas, long side ≤2200 px (never upscales), JPEG quality ladder
+  0.85→0.75→0.65 targeting ≤3.0 MB raw → base64 JSON stays under ~4.1 MB.
+  Also exports apiErrorMessage(): JSON-first error reader that turns a
+  non-JSON 413 (Vercel HTML page) into a clear Arabic message.
+- Wired into ScanStudio (photo branch), OcrImport (image branch; PDF pages
+  keep their 1800 px render) and page.tsx SettingsPane OCR test.
+- Displayed limits updated to 25 MB with an on-device compression note;
+  /api/scan + /api/ocr responses now parse defensively (no JSON crash).
+- Accuracy guard: scripts/downscale-fixtures.py (cv2) writes 2200 px q85
+  fixtures; tests/omr-engine-harness.py accepts OMR_HARNESS_FIXTURES and
+  a blank_sheet_0.jpg fallback. Downscaled run: 23/24 — the one failure is
+  the double-compression artifact (fixture q85 → 1200 px q70, an input the
+  on-device path cannot produce; the same case from a clean source passes).
+- Engine robustness fix surfaced by the guard: build_homography's 3-point
+  strategy returned a 2x3 AFFINE matrix into cv2.warpPerspective (3x3 only)
+  → crash on low-res sheets. warp_with now promotes 2x3 → 3x3.

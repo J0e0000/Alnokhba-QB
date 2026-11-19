@@ -14,6 +14,7 @@ import { Progress } from '@/components/ui/progress';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Camera, Crosshair, FileScan, Loader2, ScanLine, Stethoscope } from 'lucide-react';
+import { apiErrorMessage, prepareUpload } from '@/lib/image/prepareUpload';
 import type { QBAnswerStatus, QBScannedAnswer, QBScanGrade } from '@/lib/qb/types';
 
 interface ScanResult {
@@ -81,8 +82,8 @@ export default function ScanStudio({ onScanned }: { onScanned?: () => void }) {
   const handleFiles = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
     const file = files[0];
-    if (file.size > 20 * 1024 * 1024) {
-      toast.error('حجم الصورة كبير جدًا (الحد 20 ميجابايت)');
+    if (file.size > 25 * 1024 * 1024) {
+      toast.error('حجم الصورة كبير جدًا (الحد 25 ميجابايت)');
       return;
     }
     setBusy(true);
@@ -91,14 +92,11 @@ export default function ScanStudio({ onScanned }: { onScanned?: () => void }) {
     setManualMode(false);
     setManualPoints([]);
     try {
-      const dataUrl = await new Promise<string>((resolve, reject) => {
-        const r = new FileReader();
-        r.onload = () => resolve(r.result as string);
-        r.onerror = reject;
-        r.readAsDataURL(file);
-      });
-      setPendingImage(dataUrl); // kept for the manual-corner fallback
-      await submitScan(dataUrl, undefined);
+      // Downscale + JPEG re-encode on-device: keeps the base64 JSON body under
+      // Vercel's 4.5 MB function payload limit for typical phone photos.
+      const prepared = await prepareUpload(file);
+      setPendingImage(prepared.dataUrl); // kept for the manual-corner fallback
+      await submitScan(prepared.dataUrl, undefined);
     } catch {
       toast.error('تعذر قراءة الصورة');
       setBusy(false);
@@ -117,9 +115,14 @@ export default function ScanStudio({ onScanned }: { onScanned?: () => void }) {
           manualMarkers,
         }),
       });
-      const data = await res.json();
-      if (!res.ok) {
-        toast.error(data.error ?? 'فشل تحليل الورقة');
+      const data = (await res.json().catch(() => null)) as (ScanResult & {
+        error?: string;
+        stages?: Record<string, boolean>;
+        warnings?: string[];
+      }) | null;
+      if (!res.ok || !data) {
+        const message = await apiErrorMessage(res, 'فشل تحليل الورقة');
+        toast.error(message);
         setResult({
           scanId: '',
           answers: [],
@@ -127,8 +130,8 @@ export default function ScanStudio({ onScanned }: { onScanned?: () => void }) {
           studentCode: null,
           overallConfidence: 0,
           status: 'FAILED',
-          diagnostics: { errors: [data.error ?? 'unknown'], stages: data.stages ?? {}, warnings: data.warnings ?? [] },
-          images: data.images,
+          diagnostics: { errors: [data?.error ?? message], stages: data?.stages ?? {}, warnings: data?.warnings ?? [] },
+          images: data?.images,
         });
         return;
       }
@@ -233,7 +236,7 @@ export default function ScanStudio({ onScanned }: { onScanned?: () => void }) {
               <Camera className="h-8 w-8 text-emerald-600" />
             )}
             <div className="text-sm font-medium text-emerald-800">التقط صورة للورقة أو أفلتها هنا</div>
-            <div className="text-xs text-slate-500">الكاميرا أو الماسح الضوئي — يُقرأ رمز QR تلقائيًا لتحديد نسخة الامتحان</div>
+            <div className="text-xs text-slate-500">الكاميرا أو الماسح الضوئي — حتى 25 ميجابايت، تُضغط الصور تلقائيًا قبل الإرسال، ويُقرأ رمز QR لتحديد نسخة الامتحان</div>
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <span className="text-xs text-slate-500">النسخة (اختياري عند فشل QR):</span>

@@ -19,6 +19,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Slider } from '@/components/ui/slider';
 import ScanStudio from '@/components/qb/ScanStudio';
 import OcrImport from '@/components/qb/OcrImport';
+import { apiErrorMessage, prepareUpload } from '@/lib/image/prepareUpload';
 import BankPane from '@/components/qb/BankPane';
 import OnlinePane from '@/components/qb/OnlinePane';
 import AssignmentsPane from '@/components/qb/AssignmentsPane';
@@ -571,19 +572,17 @@ function SettingsPane() {
   const testOcr = async (file: File) => {
     setOcrBusy(true);
     try {
-      const dataUrl = await new Promise<string>((resolve, reject) => {
-        const r = new FileReader();
-        r.onload = () => resolve(r.result as string);
-        r.onerror = reject;
-        r.readAsDataURL(file);
-      });
+      // Same on-device compression as the real OCR import path.
+      const prepared = await prepareUpload(file);
       const res = await fetch('/api/ocr', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageBase64: dataUrl, lang: 'ara' }),
+        body: JSON.stringify({ imageBase64: prepared.dataUrl, lang: 'ara' }),
       });
-      const d = await res.json();
-      setOcrText(d.text ?? d.error ?? '');
+      const d = (await res.json().catch(() => null)) as { text?: string; error?: string } | null;
+      setOcrText(d?.text ?? (res.ok ? '' : await apiErrorMessage(res, 'فشل تحليل الصورة')));
+    } catch {
+      setOcrText('تعذر قراءة الصورة');
     } finally {
       setOcrBusy(false);
     }

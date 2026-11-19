@@ -451,6 +451,11 @@ def warp_with(
     gray: np.ndarray, M: np.ndarray, size_px: np.ndarray
 ) -> np.ndarray:
     W, Hpx = int(size_px[0]), int(size_px[1])
+    # build_homography can return a 2x3 AFFINE matrix (3-point strategy:
+    # cv2.getAffineTransform). warpPerspective needs a 3x3 homography —
+    # promote it (affine is a homography with last row [0,0,1]).
+    if M is not None and getattr(M, "shape", None) == (2, 3):
+        M = np.vstack([M, np.array([[0.0, 0.0, 1.0]], dtype=M.dtype)])
     return cv2.warpPerspective(gray, M, (W, Hpx), flags=cv2.INTER_LINEAR, borderValue=255)
 
 

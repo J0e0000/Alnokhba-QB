@@ -17,6 +17,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import { apiErrorMessage, prepareUpload } from '@/lib/image/prepareUpload';
 import { FileInput, ImageIcon, ListPlus, Loader2, ScanText } from 'lucide-react';
 
 /** Same rule as the server parser: a numbered line starts a new question. */
@@ -39,8 +40,8 @@ export default function OcrImport({ onCreated }: { onCreated: (examId: string) =
     .filter((l) => NUMBERED_LINE_RE.test(l)).length;
 
   const extract = async (file: File) => {
-    if (file.size > 20 * 1024 * 1024) {
-      toast.error('حجم الملف كبير جدًا (الحد 20 ميجابايت)');
+    if (file.size > 25 * 1024 * 1024) {
+      toast.error('حجم الملف كبير جدًا (الحد 25 ميجابايت)');
       return;
     }
     setOcrBusy(true);
@@ -95,15 +96,16 @@ export default function OcrImport({ onCreated }: { onCreated: (examId: string) =
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ imageBase64: pageImage, lang }),
           });
-          const d = (await res.json()) as {
+          const d = (await res.json().catch(() => null)) as {
             ok?: boolean;
             text?: string;
             error?: string;
             details?: string;
             engine?: string;
-          };
-          if (!res.ok || !d.ok) {
-            throw new Error(d.details ? `${d.error ?? 'فشل تحليل الصفحة'} — ${d.details}` : d.error ?? `فشل تحليل الصفحة ${pageNumber}`);
+          } | null;
+          if (!res.ok || !d?.ok) {
+            const message = await apiErrorMessage(res, `فشل تحليل الصفحة ${pageNumber}`);
+            throw new Error(d?.details ? `${d.error ?? message} — ${d.details}` : d?.error ?? message);
           }
           pageTexts.push(d.text ?? '');
           await page.cleanup();
@@ -115,21 +117,25 @@ export default function OcrImport({ onCreated }: { onCreated: (examId: string) =
         return;
       }
 
-      const dataUrl = await new Promise<string>((resolve, reject) => {
-        const r = new FileReader();
-        r.onload = () => resolve(r.result as string);
-        r.onerror = reject;
-        r.readAsDataURL(file);
-      });
-      setImagePreview(dataUrl);
+      // Downscale + JPEG re-encode on-device: keeps the base64 JSON body
+      // under Vercel's 4.5 MB function payload limit for phone photos.
+      const prepared = await prepareUpload(file);
+      setImagePreview(prepared.dataUrl);
       const res = await fetch('/api/ocr', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageBase64: dataUrl, lang }),
+        body: JSON.stringify({ imageBase64: prepared.dataUrl, lang }),
       });
-      const d = (await res.json()) as { ok?: boolean; text?: string; error?: string; details?: string; engine?: string };
-      if (!res.ok || !d.ok) {
-        toast.error(d.details ? `${d.error} — ${d.details}` : d.error ?? 'فشل استخراج النص من الصورة');
+      const d = (await res.json().catch(() => null)) as {
+        ok?: boolean;
+        text?: string;
+        error?: string;
+        details?: string;
+        engine?: string;
+      } | null;
+      if (!res.ok || !d?.ok) {
+        const message = await apiErrorMessage(res, 'فشل استخراج النص من الصورة');
+        toast.error(d?.details ? `${d.error ?? message} — ${d.details}` : d?.error ?? message);
         return;
       }
       setText(d.text ?? '');

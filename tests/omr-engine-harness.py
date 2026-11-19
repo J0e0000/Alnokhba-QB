@@ -23,7 +23,7 @@ sys.path.insert(0, os.path.join(ROOT, "mini-services", "omr-engine", "engine"))
 
 import pipeline  # noqa: E402  (the REAL engine code)
 
-FIX = os.path.join(ROOT, "tests", "omr-fixtures")
+FIX = os.environ.get("OMR_HARNESS_FIXTURES") or os.path.join(ROOT, "tests", "omr-fixtures")
 ART = os.path.join(ROOT, "tests", "omr-engine-harness-artifacts")
 os.makedirs(ART, exist_ok=True)
 
@@ -34,7 +34,11 @@ with open(os.path.join(FIX, "template.json"), "r", encoding="utf-8") as f:
     TEMPLATE = json.load(f)
 with open(os.path.join(FIX, "key_by_number.json"), "r", encoding="utf-8") as f:
     KEY = {int(k): v for k, v in json.load(f).items()}
-with open(os.path.join(FIX, "blank_sheet_0.png"), "rb") as f:
+_blank_name = next(
+    (n for n in ("blank_sheet_0.png", "blank_sheet_0.jpg") if os.path.exists(os.path.join(FIX, n))),
+    "blank_sheet_0.png",
+)
+with open(os.path.join(FIX, _blank_name), "rb") as f:
     BLANK = cv2.imdecode(np.frombuffer(f.read(), np.uint8), cv2.IMREAD_COLOR)
 
 H, W = BLANK.shape[:2]
