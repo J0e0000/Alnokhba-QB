@@ -20,6 +20,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import ExamRunner, { type StartedAttempt } from '@/components/qb/ExamRunner';
+import { apiErrorMessage } from '@/lib/image/prepareUpload';
 import {
   AlarmClock, ClipboardList, FileUp, GraduationCap, Loader2, NotebookPen,
   Paperclip, RefreshCw, Trash2, UserRound, X,
@@ -73,7 +74,7 @@ const SUB_META: Record<string, { label: string; cls: string }> = {
 
 const UPLOAD_ACCEPT =
   '.pdf,.png,.jpg,.jpeg,.webp,.heic,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.zip';
-const MAX_UPLOAD_MB = 10;
+const MAX_UPLOAD_MB = 100; // storage-mode cap (legacy base64 mode keeps the server-side 10 MB limit)
 
 function fmtBytes(n: number | null): string {
   if (!n && n !== 0) return '';
@@ -235,26 +236,82 @@ function StudentAssignmentCard({
     }
     setBusy(true);
     try {
-      const b64 = await new Promise<string>((resolve, reject) => {
-        const r = new FileReader();
-        r.onload = () => resolve(String(r.result).split(',')[1] ?? '');
-        r.onerror = () => reject(new Error('read'));
-        r.readAsDataURL(file);
-      });
-      const res = await fetch(`/api/assignments/${assignment.id}/submissions`, {
+      // 1) presign — the server picks the transport (direct-to-storage on
+      // Vercel, legacy base64 when storage env vars are absent).
+      const preRes = await fetch(`/api/assignments/${assignment.id}/submissions/presign`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          studentName: name.trim(),
-          studentCode: code.trim() || null,
-          fileBase64: b64,
-          fileName: file.name,
-          fileType: file.type || null,
-        }),
+        body: JSON.stringify({ fileName: file.name, fileSize: file.size }),
       });
-      const d = await res.json();
-      if (!res.ok) {
-        toast.error(d.error ?? 'فشل التسليم');
+      const pre = (await preRes.json().catch(() => null)) as {
+        mode?: string;
+        error?: string;
+        signedUrl?: string;
+        path?: string;
+      } | null;
+      if (!preRes.ok || !pre) {
+        toast.error(pre?.error ?? 'فشل تجهيز رفع الملف');
+        return;
+      }
+
+      let res: Response;
+      if (pre.mode === 'supabase' && pre.signedUrl && pre.path) {
+        // 2a) upload the bytes straight to storage — bypasses the 4.5 MB
+        // function payload limit entirely.
+        const up = await fetch(pre.signedUrl, {
+          method: 'POST',
+          headers: {
+            'x-upsert': 'true',
+            'cache-control': 'max-age=3600',
+            'content-type': file.type || 'application/octet-stream',
+          },
+          body: file,
+        });
+        if (!up.ok) {
+          toast.error('فشل رفع الملف إلى التخزين — أعد المحاولة');
+          return;
+        }
+        // 3a) confirm the submission with ONLY the storage path
+        res = await fetch(`/api/assignments/${assignment.id}/submissions`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            studentName: name.trim(),
+            studentCode: code.trim() || null,
+            storagePath: pre.path,
+            fileName: file.name,
+            fileType: file.type || null,
+            fileSize: file.size,
+          }),
+        });
+      } else {
+        // 2b) legacy: base64 through the API (local / self-host mode)
+        const b64 = await new Promise<string>((resolve, reject) => {
+          const r = new FileReader();
+          r.onload = () => resolve(String(r.result).split(',')[1] ?? '');
+          r.onerror = () => reject(new Error('read'));
+          r.readAsDataURL(file);
+        });
+        res = await fetch(`/api/assignments/${assignment.id}/submissions`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            studentName: name.trim(),
+            studentCode: code.trim() || null,
+            fileBase64: b64,
+            fileName: file.name,
+            fileType: file.type || null,
+          }),
+        });
+      }
+      const d = (await res.json().catch(() => null)) as {
+        submission?: { id: string; fileName: string; fileSize: number; submittedAt: string };
+        late?: boolean;
+        error?: string;
+      } | null;
+      if (!res.ok || !d?.submission) {
+        const message = await apiErrorMessage(res, 'فشل التسليم');
+        toast.error(d?.error ?? message);
         return;
       }
       toast.success(d.late ? 'تم التسليم (متأخر — سجل عند المعلم)' : 'تم تسليم الواجب ✓');
@@ -263,7 +320,7 @@ function StudentAssignmentCard({
         id: d.submission.id, studentName: name.trim(), studentCode: code.trim() || null,
         attemptId: null, hasFile: true, fileName: d.submission.fileName, fileType: null,
         fileSize: d.submission.fileSize, score: null, maxScore: null, feedback: null,
-        late: d.late, status: 'submitted', submittedAt: d.submission.submittedAt,
+        late: d.late ?? false, status: 'submitted', submittedAt: d.submission.submittedAt,
       });
     } catch {
       toast.error('تعذر الاتصال بالخادم');

@@ -127,7 +127,8 @@ model AssignmentSubmission {
   studentName  String
   studentCode  String?
   attemptId    String?  @unique // graded mode → one ledger row per attempt
-  filePath     String? // db/assignments/<file> — only the PATH is stored
+  filePath     String? // legacy local-disk path (db/assignments/<file>) — only the PATH is stored
+  storagePath  String? // Supabase Storage object path (private "uploads" bucket) — direct browser upload
   fileName     String?
   fileType     String?
   fileSize     Int?

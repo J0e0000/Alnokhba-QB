@@ -403,3 +403,27 @@ Verification:
   Vercel; Render/Railway noted as equivalents).
 - Verified live: 0.0.0.0+empty-token → exit 1; /health public → 200; /process
   no token → 401; wrong token → 401; correct token → 200 (/process + /ocr).
+
+## TASK 5 — Persistent files: Supabase Storage for submissions (2026-11-19)
+- AssignmentSubmission.storagePath (new column) — Supabase object path in the
+  private "uploads" bucket; legacy filePath keeps working for local/self-host.
+- src/lib/storage/supabase.ts (server-only, single global service-role client,
+  fail-open when SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY are unset):
+  ensureBucket() creates the private bucket best-effort; signed URL helpers.
+- NEW POST .../submissions/presign: validates assignment/deadline/extension and
+  returns createSignedUploadUrl() → { mode:'supabase', signedUrl, token, path,
+  maxBytes: 100MB } or { mode:'legacy' } when unconfigured.
+- POST .../submissions accepts BOTH transports: storage mode stores ONLY the
+  path (validates the path belongs to the assignment subtree + the object
+  exists in the bucket; no file bytes flow through the function → no 4.5MB
+  limit) and legacy base64 keeps the old 10MB local-disk behavior.
+- GET .../submissions/:id/file → 302 redirect to a 60s signed download URL
+  (createSignedUrl) for storage rows; legacy rows stream from disk as before.
+  Resubmissions delete the old bucket object / old disk file.
+- AssignmentsPane: presign → direct browser upload to the signed URL (plain
+  fetch, raw body + x-upsert, exact storage-js contract) → confirm with the
+  path only; client cap raised to 100 MB (presign enforces per-mode).
+- Verified locally (no Supabase env → fail-open): presign → {mode:'legacy'};
+  legacy submit 201; download returns exact bytes; storage-mode POST without
+  env → 503 Arabic; bad extension → 400. The direct-to-storage positive path
+  needs the owner's Supabase env vars (12MB acceptance = live-site step).
