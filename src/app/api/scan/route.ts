@@ -16,6 +16,7 @@ import { mkdirSync, writeFileSync } from 'fs';
 import path from 'path';
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { clientIp, rateLimit } from '@/lib/auth/ratelimit';
 import { gradeScan } from '@/lib/qb/grading';
 import {
   isTransportError,
@@ -98,6 +99,15 @@ function imagesPayload(scanId: string, debugPath: string | null, correctedPath: 
 }
 
 export async function POST(req: Request) {
+  // heavy OMR route — 30 req/min per client (auth gate)
+  const rl = await rateLimit(`scan:${clientIp(req)}`, 30, 60_000);
+  if (!rl.ok) {
+    return NextResponse.json(
+      { error: 'عدد كبير من الطلبات — خفّف السرعة وحاول بعد قليل' },
+      { status: 429, headers: { 'Retry-After': String(rl.retryAfterSec) } },
+    );
+  }
+
   try {
     const body = await readJsonBody(req);
     const rawImage = typeof body?.imageBase64 === 'string' ? body.imageBase64 : '';

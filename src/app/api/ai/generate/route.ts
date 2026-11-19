@@ -8,6 +8,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { db } from '@/lib/db';
+import { clientIp, rateLimit } from '@/lib/auth/ratelimit';
 import { readJsonBody, serverError, zodMessage } from '../../_lib/shared';
 import {
   normalizeCorrectAnswer,
@@ -125,6 +126,15 @@ function normalizeCandidate(
 }
 
 export async function POST(req: Request) {
+  // heavy LLM route — 30 req/min per client (auth gate)
+  const rl = await rateLimit(`ai:${clientIp(req)}`, 30, 60_000);
+  if (!rl.ok) {
+    return NextResponse.json(
+      { error: 'عدد كبير من الطلبات — خفّف السرعة وحاول بعد قليل' },
+      { status: 429, headers: { 'Retry-After': String(rl.retryAfterSec) } },
+    );
+  }
+
   try {
     const body = await readJsonBody(req);
     const parsed = genSchema.safeParse(body);

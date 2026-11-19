@@ -203,3 +203,13 @@ model CalibrationProfile {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 }
+
+// Fixed-window rate limiting for the auth gate. One row per
+// "<scope>:<client-key>"; the window resets when it elapses. Deliberately a
+// plain table — no external rate-limit service required.
+model RateLimitBucket {
+  key         String   @id
+  count       Int      @default(0)
+  windowStart DateTime
+  @@index([windowStart])
+}

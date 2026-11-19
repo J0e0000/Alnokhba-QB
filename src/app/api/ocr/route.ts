@@ -6,12 +6,22 @@
 
 import { NextResponse } from 'next/server';
 import { processDocument } from '@/lib/qb/ocr/engine';
+import { clientIp, rateLimit } from '@/lib/auth/ratelimit';
 import { readJsonBody, serverError, stripDataUrl } from '../_lib/shared';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: Request) {
+  // heavy OCR route — 30 req/min per client (auth gate)
+  const rl = await rateLimit(`ocr:${clientIp(req)}`, 30, 60_000);
+  if (!rl.ok) {
+    return NextResponse.json(
+      { error: 'عدد كبير من الطلبات — خفّف السرعة وحاول بعد قليل' },
+      { status: 429, headers: { 'Retry-After': String(rl.retryAfterSec) } },
+    );
+  }
+
   try {
     const body = await readJsonBody(req);
     const rawImage = typeof body?.imageBase64 === 'string' ? body.imageBase64 : '';

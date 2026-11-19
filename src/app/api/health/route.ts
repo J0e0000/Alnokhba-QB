@@ -1,10 +1,14 @@
 // GET /api/health → { ok, db, pdf, omrEngine }
+// Public by design, but UNAUTHENTICATED callers get { ok } only — the db /
+// pdf / omrEngine internals require a valid session (see src/proxy.ts).
 
 import { NextResponse } from 'next/server';
+import { cookies } from 'next/headers';
 import { db } from '@/lib/db';
 import { getBrowserHealth, warmBrowser } from '@/lib/pdf/pool';
 import { engineHealth } from '@/lib/omr/client';
 import { serverError } from '../_lib/shared';
+import { authConfigured, SESSION_COOKIE, verifySessionToken } from '@/lib/auth/session';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -22,6 +26,16 @@ export async function GET() {
       dbOk = true;
     } catch {
       dbOk = false;
+    }
+
+    // Public, minimal payload for unauthenticated callers.
+    // (When the auth gate is not configured yet, the proxy is fail-open and
+    // the full payload stays available — nothing is protected at that point.)
+    const authed =
+      !authConfigured() ||
+      (await verifySessionToken((await cookies()).get(SESSION_COOKIE)?.value));
+    if (!authed) {
+      return NextResponse.json({ ok: dbOk });
     }
 
     const pdf = getBrowserHealth();

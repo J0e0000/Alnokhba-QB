@@ -347,3 +347,26 @@ Verification:
 - Live production API: `/api/health` returned DB and OMR healthy; created a draft exam, imported two questions to a draft, published an OMR-enabled exam, rendered its answer sheet, and scanned the blank sheet through `/api/scan` successfully.
 - Browser E2E: text PDF upload → PDF.js extraction → exam creation passed; scanned PDF upload → page rendering → English Tesseract OCR passed. Arabic Tesseract recognized a generated Arabic sample; the processor remains flagged for teacher review.
 - Full `.zscripts/build.sh` production archive completed successfully at `/tmp/alnokhba-release-test.tar.gz` (276 MB).
+
+## TASK 2 — Authentication: shared-password gate (2026-11-19)
+- src/proxy.ts (Next.js 16 proxy convention, Node runtime): every /api/* and
+  page request needs a valid qb_session cookie; public = /login, /api/auth/*,
+  /api/health; API → 401 JSON {error:"غير مصرح"}, pages → redirect /login?next=.
+  FAIL-OPEN while APP_PASSWORD/SESSION_SECRET are unset so a deploy can never
+  lock the owner out before the env vars exist.
+- POST /api/auth/login: constant-time compare (sha256 both sides →
+  crypto.timingSafeEqual); cookie qb_session = HMAC-SHA256({iat,exp=7d}) signed
+  with SESSION_SECRET via Web Crypto (crypto.subtle.verify = constant-time).
+  POST /api/auth/logout clears it. httpOnly + secure + sameSite=lax + path=/.
+- Rate limits in a plain Prisma table (RateLimitBucket: key/count/windowStart):
+  login 5/15min per IP; /api/ai/generate, /api/ocr, /api/scan 30/min per IP.
+  Stale rows swept best-effort on window rotation; limiter fails OPEN on DB
+  errors so it can never take the app down.
+- /api/health returns {ok} only for unauthenticated callers (full internals
+  require a session).
+- Arabic RTL /login page (Tajawal + shadcn card, ?next= return path).
+- Verified (curl matrix): unauth /api/exams → 401; unauth / → 307 → /login;
+  5 wrong passwords → 401, 6th → 429 (+Retry-After); correct login → 200 +
+  cookie; authed /api/exams → 200; tampered cookie → 401; health unauth =
+  {ok:true} only, authed = full payload; logout → 401 again. Browser: /
+  redirects to /login and the login page renders (screenshot in /home/z/tmp).
