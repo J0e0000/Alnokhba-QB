@@ -8,7 +8,9 @@ const nextConfig: NextConfig = {
   },
   /* config options here */
   typescript: {
-    ignoreBuildErrors: true,
+    // CI runs `tsc --noEmit` as a blocking gate (see .github/workflows/ci.yml);
+    // build must NOT silently ignore type errors anymore.
+    ignoreBuildErrors: false,
   },
   reactStrictMode: false,
 };

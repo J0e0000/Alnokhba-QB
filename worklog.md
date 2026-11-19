@@ -446,3 +446,23 @@ Verification:
   DATABASE_URL (pooled, ?pgbouncer=true) + DIRECT_URL in Vercel and runs
   `prisma db push` once against the new database. src/lib/db.ts confirmed to
   use a single global PrismaClient.
+
+## TASK 7 — Quality gates (2026-11-19)
+- .github/workflows/ci.yml: bun job (install --frozen-lockfile → prisma
+  generate → tsc --noEmit → eslint src → bun test) + python job
+  (requirements → omr-engine harness 24/24).
+- tests/schema.test.ts (bun test): regression for the exam-save-400 bug —
+  shape fill "transparent" must pass sanitizeDocument, "#12" must fail,
+  fixture document stays valid. 3/3 pass.
+- tsc is CLEAN: examples/ (scaffold socket.io demos, not app code) excluded
+  from tsconfig; @types/bun added for bun:test. next.config.ts
+  typescript.ignoreBuildErrors → false (build now fails on type errors; the
+  full build passes).
+- .env.example: DATABASE_URL/DIRECT_URL, APP_PASSWORD/SESSION_SECRET,
+  OMR_ENGINE_URL/OMR_ENGINE_TOKEN, SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY
+  (names + guidance only).
+- scripts/smoke.sh: login → health → create exam → PATCH (transparent shape)
+  → publish → GET pdf (%PDF magic) → POST fixture to /api/scan (JSON answer)
+  → cleanup.
+- Removed next-auth after grep confirmed zero usage in src/scripts/tests.
+  z-ai-web-dev-sdk kept (Arabic OCR VLM fallback still depends on it).

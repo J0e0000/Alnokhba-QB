@@ -35,6 +35,8 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+# the example is documentation — it must be committed
+!.env.example
 
 # local deploy credentials / secrets dir (never commit)
 .secrets/
