@@ -1033,7 +1033,19 @@ def ocr(image_b64: str, lang: str) -> Dict[str, Any]:
 
     if lang not in ("eng", "ara"):
         return {"ok": False, "error": "lang must be 'eng' or 'ara'", "engine": "tesseract"}
-    installed = subprocess.run(["tesseract", "--list-langs"], capture_output=True, text=True).stdout
+    tesseract_cmd = os.environ.get("TESSERACT_CMD", "tesseract")
+    tessdata_dir = os.environ.get("TESSDATA_DIR")
+    list_cmd = [tesseract_cmd]
+    if tessdata_dir:
+        list_cmd.extend(["--tessdata-dir", tessdata_dir])
+    list_cmd.append("--list-langs")
+    try:
+        lang_result = subprocess.run(list_cmd, capture_output=True, text=True, timeout=15)
+    except FileNotFoundError:
+        return {"ok": False, "error": "Tesseract executable is not installed", "engine": "tesseract"}
+    if lang_result.returncode != 0:
+        return {"ok": False, "error": lang_result.stderr.strip()[:400] or "Tesseract could not load language data", "engine": "tesseract"}
+    installed = {line.strip() for line in lang_result.stdout.splitlines()}
     if lang not in installed:
         return {"ok": False, "error": f"tesseract language '{lang}' not installed", "engine": "tesseract"}
     if "," in image_b64 and image_b64.strip().startswith("data:"):
@@ -1044,7 +1056,10 @@ def ocr(image_b64: str, lang: str) -> Dict[str, Any]:
         out = os.path.join(td, "out")
         with open(inp, "wb") as f:
             f.write(buf)
-        proc = subprocess.run(["tesseract", inp, out, "-l", lang, "--psm", "6"], capture_output=True, text=True)
+        cmd = [tesseract_cmd, inp, out, "-l", lang, "--psm", "6"]
+        if tessdata_dir:
+            cmd.extend(["--tessdata-dir", tessdata_dir])
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
         if proc.returncode != 0:
             return {"ok": False, "error": proc.stderr.strip()[:400], "engine": "tesseract"}
         with open(out + ".txt", "r", encoding="utf-8") as f:

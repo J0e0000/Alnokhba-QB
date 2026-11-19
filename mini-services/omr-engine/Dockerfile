@@ -7,6 +7,6 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
-ENV PORT=3032 HOST=0.0.0.0
+ENV OMR_ENGINE_PORT=3032 OMR_ENGINE_HOST=0.0.0.0
 EXPOSE 3032
 CMD ["python3", "server.py"]

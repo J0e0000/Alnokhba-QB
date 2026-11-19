@@ -34,7 +34,7 @@ export interface DocumentProcessor {
 
 const tesseractProcessor: DocumentProcessor = {
   name: 'tesseract',
-  langs: ['eng'],
+  langs: ['ara', 'eng'],
   async process({ base64, lang }) {
     const { ocrText } = await import('@/lib/omr/client');
     const res = await ocrText(base64, lang);

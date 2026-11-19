@@ -328,3 +328,22 @@ Stage Summary:
 - App is now self-contained: browser ships inside the repo (chrome/), discovery works in dev, next start and standalone (cwd-chdir) modes
 - Deployment target decision: keep the platform container + SQLite (Python OMR engine on :3032 cannot run on Vercel serverless; external Postgres unnecessary — container persists db/custom.db)
 - If a future snapshot size limit rejects the 261MB chrome/, fallback plan: @sparticuz/chromium (~70MB compressed in node_modules)
+
+
+---
+Task ID: 11
+Agent: Manus
+Task: Diagnose and fix OMR, OCR/PDF reading, and exam creation failures
+
+Work Log:
+- Deployment root cause: the mini-service build/start scripts were tied to an old absolute workspace layout and did not reliably package/start the Python OMR server; Python OpenCV/NumPy were not declared as deploy dependencies. Fixed repository-relative paths, packaged engine source, installed requirements into the deploy runtime, configured service host/port/body limits, and made startup wait for the OMR /health endpoint.
+- OCR root cause: the runtime had no Tesseract executable or language data, while the UI routed Arabic only to the VLM fallback (which returned empty text). Added a build-time Tesseract runtime bundle (binary + shared libraries + English/Arabic trained data), configured both dev and production launchers to use it, and made Tesseract the primary processor for Arabic and English with VLM retained as fallback.
+- PDF import fix: added PDF.js; selectable PDF text is extracted directly, scanned pages are rendered in-browser and sent through the OCR API. Files over 20 MB and PDFs over 30 pages are rejected with clear errors. The import UI now accepts PDF files.
+- Exam creation: repaired the production DB path to resolve inside the extracted bundle; confirmed normal draft creation and OCR-text-to-exam import persist the questions. Fixed the OMR health indicator to read the actual nested `{ ok }` field.
+
+Verification:
+- `tests/omr-engine-harness.py`: 24/24 cases passed, including pencil/pen/phone/rotation/low-light/ambiguity/identity/grading cases.
+- `tests/mini-services-runtime.sh`: passed; the built OMR service starts healthy from the deploy layout, OpenCV imports from packaged dependencies, and OCR succeeds using the isolated bundled Tesseract binary.
+- Live production API: `/api/health` returned DB and OMR healthy; created a draft exam, imported two questions to a draft, published an OMR-enabled exam, rendered its answer sheet, and scanned the blank sheet through `/api/scan` successfully.
+- Browser E2E: text PDF upload → PDF.js extraction → exam creation passed; scanned PDF upload → page rendering → English Tesseract OCR passed. Arabic Tesseract recognized a generated Arabic sample; the processor remains flagged for teacher review.
+- Full `.zscripts/build.sh` production archive completed successfully at `/tmp/alnokhba-release-test.tar.gz` (276 MB).

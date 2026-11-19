@@ -1,2 +1,6 @@
+# Engine image manifest — baked into the Docker build (Dockerfile does
+# `COPY requirements.txt .`). Tesseract comes via apt in the Dockerfile.
+# The ROOT-LEVEL requirements.txt is a separate copy consumed only by the
+# .zscripts self-hosting flow; keep the two in sync when bumping deps.
 opencv-python-headless>=4.9,<5
 numpy>=1.26,<3
