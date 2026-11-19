@@ -427,3 +427,22 @@ Verification:
   legacy submit 201; download returns exact bytes; storage-mode POST without
   env → 503 Arabic; bad extension → 400. The direct-to-storage positive path
   needs the owner's Supabase env vars (12MB acceptance = live-site step).
+
+## TASK 6 — Postgres go-live prep (2026-11-19)
+- package.json: postinstall + build now run scripts/prisma-provider.mjs &&
+  prisma generate (Vercel dependency cache can skip postinstall; the provider
+  switch depends on the build-time DATABASE_URL).
+- scripts/prisma-provider.mjs: keeps sqlite locally; with a postgres
+  DATABASE_URL it rewrites the schema provider to postgresql (ephemeral build
+  copy) and injects directUrl = env("DIRECT_URL") when DIRECT_URL exists.
+- scripts/export-sqlite.ts: one-shot mover — export mode dumps every table
+  (FK-safe order) from db/custom.db to db/data-export.json; import mode
+  createMany(skipDuplicates) into whatever DATABASE_URL targets (run it after
+  the provider is on postgresql).
+- Verified: switch test (postgres URL → postgresql + directUrl; restore OK),
+  keep-sqlite test, export of the live local data (9 exams / 6 versions /
+  100 students / 104 scans), full build with the new pipeline.
+- NOT merged: postgres-migration branch stays unmerged until the owner sets
+  DATABASE_URL (pooled, ?pgbouncer=true) + DIRECT_URL in Vercel and runs
+  `prisma db push` once against the new database. src/lib/db.ts confirmed to
+  use a single global PrismaClient.

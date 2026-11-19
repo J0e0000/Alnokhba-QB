@@ -4,10 +4,10 @@
   "private": true,
   "scripts": {
     "dev": "next dev -p 3000 2>&1 | tee dev.log",
-    "build": "next build && cp -r .next/static .next/standalone/.next/ && cp -r public .next/standalone/ && (cp -r chrome .next/standalone/ || echo '[build] WARN: chrome/ missing — runtime PDF/OMR export needs CHROME_PATH')",
+    "build": "node scripts/prisma-provider.mjs && prisma generate && next build && cp -r .next/static .next/standalone/.next/ && cp -r public .next/standalone/ && (cp -r chrome .next/standalone/ || echo '[build] WARN: chrome/ missing — runtime PDF/OMR export needs CHROME_PATH')",
     "start": "NODE_ENV=production bun .next/standalone/server.js 2>&1 | tee server.log",
     "lint": "eslint .",
-    "postinstall": "bash scripts/install-chrome.sh",
+    "postinstall": "node scripts/prisma-provider.mjs && prisma generate && bash scripts/install-chrome.sh",
     "chrome:install": "bash scripts/install-chrome.sh --force",
     "db:push": "prisma db push --accept-data-loss",
     "db:generate": "prisma generate",
